@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Tracket Mobile Stabilizer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { background: #0f0f12; color: #fff; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    header { padding: 14px; text-align: center; background: #1a1a22; font-weight: 700; font-size: 18px; border-bottom: 1px solid #2d2d3a; }
+    #status { font-size: 13px; color: #a0a0b8; padding: 8px 14px; text-align: center; background: #14141a; }
+    .viewport { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; background: #000; }
+    canvas { max-width: 100%; max-height: 100%; touch-action: none; }
+    .controls { padding: 16px; background: #1a1a22; display: flex; flex-direction: column; gap: 12px; border-top: 1px solid #2d2d3a; }
+    .row { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+    button, .file-btn { flex: 1; padding: 14px; border: none; border-radius: 10px; font-weight: 600; font-size: 15px; text-align: center; cursor: pointer; }
+    .file-btn { background: #2d2d3a; color: #fff; display: inline-block; }
+    .btn-primary { background: #6c5ce7; color: #fff; }
+    .btn-primary:disabled { background: #3d3d4e; color: #777; }
+    input[type="file"] { display: none; }
+    input[type="range"] { flex: 1; accent-color: #6c5ce7; }
+  </style>
+</head>
+<body>
+
+  <header>Tracket Motion Lock</header>
+  <div id="status">Loading OpenCV engine...</div>
+
+  <div class="viewport">
+    <video id="video" playsinline muted style="display:none;"></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div class="controls">
+    <div class="row">
+      <span style="font-size:13px;">Zoom Crop: <b id="zoomVal">75%</b></span>
+      <input type="range" id="zoomSlider" min="50" max="95" value="75">
+    </div>
+    <div class="row">
+      <label class="file-btn">
+        1. Pick Video
+        <input type="file" id="videoInput" accept="video/*">
+      </label>
+      <button id="startBtn" class="btn-primary" disabled>2. Stabilize & Export</button>
+    </div>
+  </div>
+
+  <!-- Load OpenCV.js -->
+  <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
+    const zoomSlider = document.getElementById('zoomSlider');
+    const zoomVal = document.getElementById('zoomVal');
+
+    let cvReady = false;
+    let templateMat = null;
+    let trackBox = null;
+    let isTracking = false;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+
+    zoomSlider.oninput = () => zoomVal.innerText = zoomSlider.value + '%';
+
+    function onOpenCvReady() {
+      cv['onRuntimeInitialized'] = () => {
+        cvReady = true;
+        statusText.innerText = "Ready! Pick a video from your gallery.";
+      };
+    }
+
+    // 1. Load Video Frame
+    document.getElementById('videoInput').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      video.src = URL.createObjectURL(file);
+      video.currentTime = 0.1;
+      video.onloadeddata = () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        statusText.innerText = "Tap directly on the object you want to lock onto.";
+        trackBox = null;
+        startBtn.disabled = true;
+      };
+    });
+
+    // 2. Tap Subject on Mobile Screen to Select ROI
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!video.src || isTracking) return;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+
+      const tapX = (e.clientX - rect.left) * scaleX;
+      const tapY = (e.clientY - rect.top) * scaleY;
+
+      // Create an 80x80 tracking box around the user's finger tap
+      const boxSize = Math.min(canvas.width, canvas.height) * 0.16;
+      const x = Math.max(0, Math.min(canvas.width - boxSize, tapX - boxSize / 2));
+      const y = Math.max(0, Math.min(canvas.height - boxSize, tapY - boxSize / 2));
+
+      trackBox = { x: Math.round(x), y: Math.round(y), w: Math.round(boxSize), h: Math.round(boxSize) };
+
+      // Redraw first frame & green selection box
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = '#00ff88';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(trackBox.x, trackBox.y, trackBox.w, trackBox.h);
+
+      statusText.innerText = "Subject locked! Tap 'Stabilize & Export'.";
+      startBtn.disabled = false;
+    });
+
+    // 3. Track Subject & Counter-Shift Video
+    startBtn.addEventListener('click', () => {
+      if (!cvReady || !trackBox) return;
+      isTracking = true;
+      startBtn.disabled = true;
+      statusText.innerText = "Stabilizing & Recording...";
+
+      // Capture clean first frame and extract template patch
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      let firstFrame = cv.imread(canvas);
+      let roiRect = new cv.Rect(trackBox.x, trackBox.y, trackBox.w, trackBox.h);
+      if (templateMat) templateMat.delete();
+      templateMat = firstFrame.roi(roiRect).clone();
+      firstFrame.delete();
+
+      // Setup WebM/MP4 Video Recorder from Canvas
+      recordedChunks = [];
+      const stream = canvas.captureStream(30);
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+      mediaRecorder.onstop = saveVideo;
+      mediaRecorder.start();
+
+      video.currentTime = 0;
+      video.play();
+      requestAnimationFrame(processFrame);
+    });
+
+    function processFrame() {
+      if (video.paused || video.ended) {
+        if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
+        isTracking = false;
+        statusText.innerText = "Done! Downloading stabilized video...";
+        return;
+      }
+
+      const w = canvas.width;
+      const h = canvas.height;
+
+      // Draw raw video frame to read pixels
+      ctx.drawImage(video, 0, 0, w, h);
+      let frame = cv.imread(canvas);
+
+      // Search around previous known position for speed and accuracy
+      const pad = Math.round(trackBox.w * 0.9);
+      const sx = Math.max(0, trackBox.x - pad);
+      const sy = Math.max(0, trackBox.y - pad);
+      const sw = Math.min(w - sx, trackBox.w + pad * 2);
+      const sh = Math.min(h - sy, trackBox.h + pad * 2);
+
+      let searchWindow = frame.roi(new cv.Rect(sx, sy, sw, sh));
+      let result = new cv.Mat();
+      cv.matchTemplate(searchWindow, templateMat, result, cv.TM_CCOEFF_NORMED);
+      let minMax = cv.minMaxLoc(result);
+
+      if (minMax.maxVal > 0.45) {
+        trackBox.x = sx + minMax.maxLoc.x;
+        trackBox.y = sy + minMax.maxLoc.y;
+      }
+
+      // Calculate subject center & required counter-shift
+      const objCenterX = trackBox.x + trackBox.w / 2;
+      const objCenterY = trackBox.y + trackBox.h / 2;
+      const shiftX = (w / 2) - objCenterX;
+      const shiftY = (h / 2) - objCenterY;
+
+      // Shift & Auto-Zoom on Canvas to hide black borders
+      const zoom = parseInt(zoomSlider.value) / 100;
+      const scale = 1 / zoom;
+
+      ctx.save();
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, w, h);
+      ctx.translate(w / 2, h / 2);
+      ctx.scale(scale, scale);
+      ctx.translate(-w / 2 + shiftX, -h / 2 + shiftY);
+      ctx.drawImage(video, 0, 0, w, h);
+      ctx.restore();
+
+      // Cleanup OpenCV memory
+      frame.delete();
+      searchWindow.delete();
+      result.delete();
+
+      requestAnimationFrame(processFrame);
+    }
+
+    function saveVideo() {
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'tracket_stabilized.webm';
+      a.click();
+      startBtn.disabled = false;
+    }
+  </script>
+</body>
+</html>
