@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Tracket Pro Studio</title>
+  <style>
+    :root {
+      --bg-dark: #09090d;
+      --panel-bg: #13131c;
+      --border: #262638;
+      --accent: #7c5cff;
+      --accent-glow: rgba(124, 92, 255, 0.35);
+      --neon-green: #00f59b;
+      --text: #ffffff;
+      --text-muted: #8b8ba3;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; user-select: none; }
+    body { background: var(--bg-dark); color: var(--text); display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+
+    /* Top Bar */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; background: var(--panel-bg); border-bottom: 1px solid var(--border);
+    }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; letter-spacing: 0.3px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--neon-green); box-shadow: 0 0 8px var(--neon-green); }
+    .badge { font-size: 11px; padding: 4px 10px; border-radius: 20px; background: #1f1f2e; color: var(--text-muted); font-weight: 600; }
+
+    /* Main Video Canvas Area */
+    .viewport {
+      flex: 1; position: relative; display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(circle at center, #151520 0%, #07070a 100%); overflow: hidden;
+    }
+    canvas { max-width: 100%; max-height: 100%; object-fit: contain; touch-action: none; border-radius: 8px; }
+
+    /* Floating Instruction Pill */
+    .hint-pill {
+      position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      background: rgba(19, 19, 28, 0.85); backdrop-filter: blur(8px);
+      border: 1px solid var(--border); padding: 7px 14px; border-radius: 20px;
+      font-size: 12px; color: #d0d0e8; pointer-events: none; white-space: nowrap;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+    }
+
+    /* Empty State Overlay */
+    .empty-state {
+      position: absolute; display: flex; flex-direction: column; align-items: center; gap: 10px;
+      color: var(--text-muted); text-align: center; pointer-events: none;
+    }
+    .empty-icon { font-size: 38px; opacity: 0.5; }
+
+    /* Bottom Editor Deck */
+    .editor-deck {
+      background: var(--panel-bg); border-top: 1px solid var(--border);
+      padding: 12px 16px 20px; display: flex; flex-direction: column; gap: 14px;
+    }
+
+    /* Playback & Time Bar */
+    .time-bar { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .play-btn {
+      background: #232334; border: none; color: #fff; width: 32px; height: 32px;
+      border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px;
+    }
+    .play-btn:disabled { opacity: 0.4; }
+
+    /* Visual Filmstrip Timeline */
+    .timeline-wrapper {
+      position: relative; height: 54px; background: #0b0b10; border-radius: 10px;
+      border: 1px solid var(--border); overflow: hidden; display: flex; align-items: center;
+    }
+    #filmstrip {
+      display: flex; width: 100%; height: 100%; opacity: 0.75; pointer-events: none;
+    }
+    #filmstrip canvas { height: 100%; flex: 1; border-radius: 0; object-fit: cover; }
+
+    /* Scrubber Slider Overlay */
+    #timelineScrubber {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      opacity: 0; cursor: pointer; z-index: 4; margin: 0;
+    }
+
+    /* Playhead Line */
+    .playhead {
+      position: absolute; top: 0; bottom: 0; left: 0%; width: 3px;
+      background: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.9);
+      z-index: 3; pointer-events: none;
+    }
+    .playhead::before {
+      content: ''; position: absolute; top: 0; left: -4px;
+      width: 11px; height: 11px; background: #fff; border-radius: 2px 2px 50% 50%;
+    }
+
+    /* Trim Range Inputs */
+    .trim-row { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-muted); }
+    .trim-row input[type="range"] { flex: 1; accent-color: var(--accent); height: 4px; }
+
+    /* Action Buttons */
+    .actions { display: flex; gap: 10px; }
+    .btn {
+      flex: 1; padding: 13px; border-radius: 12px; border: none; font-weight: 600;
+      font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+      transition: transform 0.1s, opacity 0.2s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-secondary { background: #222232; color: #fff; border: 1px solid #323248; }
+    .btn-primary { background: linear-gradient(135deg, #7c5cff, #5a35ff); color: #fff; box-shadow: 0 4px 16px var(--accent-glow); }
+    .btn-primary:disabled { background: #252536; color: #66667a; box-shadow: none; }
+    input[type="file"] { display: none; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="dot" id="engineDot"></div>
+      <span>Tracket Studio</span>
+    </div>
+    <div class="badge" id="engineStatus">Loading Engine...</div>
+  </header>
+
+  <div class="viewport">
+    <div class="hint-pill" id="hintPill">Import a video clip to begin</div>
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">🎯</div>
+      <div>Tap <b>Import Video</b> below</div>
+    </div>
+    <video id="video" playsinline muted crossorigin="anonymous" style="display:none;"></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div class="editor-deck">
+    <!-- Time & Play Controls -->
+    <div class="time-bar">
+      <button class="play-btn" id="playPauseBtn" disabled>▶</button>
+      <span id="timeDisplay">00:00.0 / 00:00.0</span>
+      <span>Zoom: <b id="zoomLabel">78%</b></span>
+    </div>
+
+    <!-- Filmstrip Timeline with Playhead -->
+    <div class="timeline-wrapper">
+      <div id="filmstrip"></div>
+      <div class="playhead" id="playhead"></div>
+      <input type="range" id="timelineScrubber" min="0" max="100" step="0.01" value="0" disabled>
+    </div>
+
+    <!-- Auto-Zoom Crop Slider -->
+    <div class="trim-row">
+      <span>Stabilization Crop</span>
+      <input type="range" id="zoomSlider" min="55" max="95" value="78">
+    </div>
+
+    <!-- Main Action Buttons -->
+    <div class="actions">
+      <label class="btn btn-secondary">
+        📁 Import Video
+        <input type="file" id="videoInput" accept="video/*">
+      </label>
+      <button class="btn btn-primary" id="stabilizeBtn" disabled>
+        ✨ Lock & Export
+      </button>
+    </div>
+  </div>
+
+  <!-- Load OpenCV.js -->
+  <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const hintPill = document.getElementById('hintPill');
+    const engineStatus = document.getElementById('engineStatus');
+    const emptyState = document.getElementById('emptyState');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const timelineScrubber = document.getElementById('timelineScrubber');
+    const playhead = document.getElementById('playhead');
+    const filmstrip = document.getElementById('filmstrip');
+    const zoomSlider = document.getElementById('zoomSlider');
+    const zoomLabel = document.getElementById('zoomLabel');
+    const stabilizeBtn = document.getElementById('stabilizeBtn');
+
+    let cvReady = false;
+    let trackBox = null;
+    let templateMat = null;
+    let isStabilizing = false;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+
+    zoomSlider.oninput = () => zoomLabel.innerText = zoomSlider.value + '%';
+
+    function onOpenCvReady() {
+      cv['onRuntimeInitialized'] = () => {
+        cvReady = true;
+        engineStatus.innerText = "AI Ready";
+        engineStatus.style.color = "#00f59b";
+      };
+    }
+
+    function formatTime(sec) {
+      if (!isFinite(sec)) return "00:00.0";
+      const m = Math.floor(sec / 60).toString().padStart(2, '0');
+      const s = Math.floor(sec % 60).toString().padStart(2, '0');
+      const ms = Math.floor((sec % 1) * 10);
+      return `${m}:${s}.${ms}`;
+    }
+
+    // 1. Load Video & Build Visual Filmstrip Timeline
+    document.getElementById('videoInput').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      emptyState.style.display = 'none';
+      hintPill.innerText = "Generating video timeline...";
+      video.src = URL.createObjectURL(file);
+
+      video.onloadedmetadata = async () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        timelineScrubber.max = video.duration;
+        timelineScrubber.disabled = false;
+        playPauseBtn.disabled = false;
+        trackBox = null;
+        stabilizeBtn.disabled = true;
+
+        await generateThumbnails();
+        video.currentTime = 0.05;
+        hintPill.innerText = "Scrub timeline & tap any object to lock target";
+      };
+    });
+
+    // Generate 8 thumbnail frames for the timeline bar
+    async function generateThumbnails() {
+      filmstrip.innerHTML = '';
+      const count = 8;
+      const dur = video.duration || 1;
+      for (let i = 0; i < count; i++) {
+        video.currentTime = (dur / count) * i;
+        await new Promise(r => video.onseeked = r);
+        const thumbCanvas = document.createElement('canvas');
+        thumbCanvas.width = 120;
+        thumbCanvas.height = 68;
+        thumbCanvas.getContext('2d').drawImage(video, 0, 0, thumbCanvas.width, thumbCanvas.height);
+        filmstrip.appendChild(thumbCanvas);
+      }
+    }
+
+    // Update Canvas & Timeline UI when scrubbing
+    video.addEventListener('timeupdate', () => {
+      if (isStabilizing) return;
+      updateTimelineUI();
+      drawCurrentFrameWithReticle();
+    });
+
+    function updateTimelineUI() {
+      const pct = (video.currentTime / (video.duration || 1)) * 100;
+      playhead.style.left = `${pct}%`;
+      timelineScrubber.value = video.currentTime;
+      timeDisplay.innerText = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+    }
+
+    timelineScrubber.addEventListener('input', () => {
+      if (isStabilizing) return;
+      video.pause();
+      playPauseBtn.innerText = "▶";
+      video.currentTime = parseFloat(timelineScrubber.value);
+      updateTimelineUI();
+    });
+
+    playPauseBtn.addEventListener('click', () => {
+      if (video.paused) {
+        video.play();
+        playPauseBtn.innerText = "⏸";
+      } else {
+        video.pause();
+        playPauseBtn.innerText = "▶";
+      }
+    });
+
+    // 2. Tap Subject on Canvas to Lock Target Reticle
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!video.src || isStabilizing) return;
+      video.pause();
+      playPauseBtn.innerText = "▶";
+
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+
+      const tapX = (e.clientX - rect.left) * scaleX;
+      const tapY = (e.clientY - rect.top) * scaleY;
+
+      const boxSize = Math.round(Math.min(canvas.width, canvas.height) * 0.16);
+      const x = Math.max(0, Math.min(canvas.width - boxSize, tapX - boxSize / 2));
+      const y = Math.max(0, Math.min(canvas.height - boxSize, tapY - boxSize / 2));
+
+      trackBox = { x: Math.round(x), y: Math.round(y), w: boxSize, h: boxSize };
+      drawCurrentFrameWithReticle();
+
+      hintPill.innerText = "Target Locked! Tap 'Lock & Export' below.";
+      stabilizeBtn.disabled = false;
+    });
+
+    function drawCurrentFrameWithReticle() {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      if (!trackBox) return;
+
+      const { x, y, w, h } = trackBox;
+      ctx.save();
+      ctx.strokeStyle = '#00f59b';
+      ctx.lineWidth = Math.max(3, canvas.width * 0.005);
+
+      // Draw corner brackets
+      const c = w * 0.28;
+      ctx.beginPath();
+      ctx.moveTo(x, y + c); ctx.lineTo(x, y); ctx.lineTo(x + c, y);
+      ctx.moveTo(x + w - c, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + c);
+      ctx.moveTo(x, y + h - c); ctx.lineTo(x, y + h); ctx.lineTo(x + c, y + h);
+      ctx.moveTo(x + w - c, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - c);
+      ctx.stroke();
+
+      // Center crosshair dot
+      ctx.fillStyle = '#00f59b';
+      ctx.beginPath();
+      ctx.arc(x + w / 2, y + h / 2, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // 3. Stabilize from Current Timeline Position & Export
+    stabilizeBtn.addEventListener('click', () => {
+      if (!cvReady || !trackBox) return;
+      isStabilizing = true;
+      stabilizeBtn.disabled = true;
+      timelineScrubber.disabled = true;
+      playPauseBtn.disabled = true;
+      hintPill.innerText = "Stabilizing motion & recording...";
+
+      // Capture clean template patch from the selected frame
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      let firstFrame = cv.imread(canvas);
+      let roi = new cv.Rect(trackBox.x, trackBox.y, trackBox.w, trackBox.h);
+      if (templateMat) templateMat.delete();
+      templateMat = firstFrame.roi(roi).clone();
+      firstFrame.delete();
+
+      recordedChunks = [];
+      const stream = canvas.captureStream(30);
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+      mediaRecorder.onstop = exportStabilizedVideo;
+      mediaRecorder.start();
+
+      video.play();
+      requestAnimationFrame(stabilizeLoop);
+    });
+
+    function stabilizeLoop() {
+      if (video.paused || video.ended) {
+        if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
+        isStabilizing = false;
+        timelineScrubber.disabled = false;
+        playPauseBtn.disabled = false;
+        stabilizeBtn.disabled = false;
+        hintPill.innerText = "Export complete! Video downloaded.";
+        return;
+      }
+
+      updateTimelineUI();
+      const w = canvas.width;
+      const h = canvas.height;
+
+      ctx.drawImage(video, 0, 0, w, h);
+      let frame = cv.imread(canvas);
+
+      const pad = Math.round(trackBox.w * 0.9);
+      const sx = Math.max(0, trackBox.x - pad);
+      const sy = Math.max(0, trackBox.y - pad);
+      const sw = Math.min(w - sx, trackBox.w + pad * 2);
+      const sh = Math.min(h - sy, trackBox.h + pad * 2);
+
+      let searchWindow = frame.roi(new cv.Rect(sx, sy, sw, sh));
+      let result = new cv.Mat();
+      cv.matchTemplate(searchWindow, templateMat, result, cv.TM_CCOEFF_NORMED);
+      let minMax = cv.minMaxLoc(result);
+
+      if (minMax.maxVal > 0.45) {
+        trackBox.x = sx + minMax.maxLoc.x;
+        trackBox.y = sy + minMax.maxLoc.y;
+      }
+
+      const objCenterX = trackBox.x + trackBox.w / 2;
+      const objCenterY = trackBox.y + trackBox.h / 2;
+      const shiftX = (w / 2) - objCenterX;
+      const shiftY = (h / 2) - objCenterY;
+
+      const zoom = parseInt(zoomSlider.value) / 100;
+      const scale = 1 / zoom;
+
+      ctx.save();
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, w, h);
+      ctx.translate(w / 2, h / 2);
+      ctx.scale(scale, scale);
+      ctx.translate(-w / 2 + shiftX, -h / 2 + shiftY);
+      ctx.drawImage(video, 0, 0, w, h);
+      ctx.restore();
+
+      frame.delete();
+      searchWindow.delete();
+      result.delete();
+
+      requestAnimationFrame(stabilizeLoop);
+    }
+
+    function exportStabilizedVideo() {
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'tracket_stabilized.webm';
+      a.click();
+    }
+  </script>
+</body>
+  </html>
+  
