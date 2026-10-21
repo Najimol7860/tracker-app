@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Tracket Pro Studio - AE Edition</title>
+  <style>
+    :root {
+      --bg-dark: #07070a;
+      --panel-bg: #111118;
+      --border: #222230;
+      --accent: #7c5cff;
+      --accent-glow: rgba(124, 92, 255, 0.4);
+      --neon-green: #00f59b;
+      --text: #ffffff;
+      --text-muted: #8b8ba3;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; user-select: none; }
+    body { background: var(--bg-dark); color: var(--text); display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+
+    /* Top Navigation */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; background: var(--panel-bg); border-bottom: 1px solid var(--border);
+    }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--neon-green); box-shadow: 0 0 8px var(--neon-green); }
+    .badge { font-size: 11px; padding: 3px 9px; border-radius: 20px; background: #1c1c28; color: var(--text-muted); font-weight: 600; }
+
+    /* Main Viewport */
+    .viewport {
+      flex: 1; position: relative; display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(circle at center, #14141f 0%, #050508 100%); overflow: hidden;
+    }
+    canvas { max-width: 100%; max-height: 100%; object-fit: contain; touch-action: none; border-radius: 6px; }
+
+    .hint-pill {
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      background: rgba(17, 17, 24, 0.85); backdrop-filter: blur(8px);
+      border: 1px solid var(--border); padding: 6px 14px; border-radius: 20px;
+      font-size: 11px; color: #d0d0e8; pointer-events: none; white-space: nowrap;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 5;
+    }
+
+    .empty-state {
+      position: absolute; display: flex; flex-direction: column; align-items: center; gap: 8px;
+      color: var(--text-muted); text-align: center; pointer-events: none;
+    }
+    .empty-icon { font-size: 34px; opacity: 0.5; }
+
+    /* Editor Control Deck */
+    .editor-deck {
+      background: var(--panel-bg); border-top: 1px solid var(--border);
+      padding: 10px 14px 18px; display: flex; flex-direction: column; gap: 10px;
+    }
+
+    /* Tabs for AE Features */
+    .toolbar-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    .tab-btn {
+      background: #1a1a24; border: 1px solid var(--border); color: var(--text-muted);
+      padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    .panel-content { display: none; flex-direction: column; gap: 8px; max-height: 95px; overflow-y: auto; }
+    .panel-content.active { display: flex; }
+
+    /* Control Rows */
+    .ctrl-row { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--text-muted); gap: 10px; }
+    .ctrl-row input[type="range"] { flex: 1; accent-color: var(--accent); height: 4px; }
+    .ctrl-row input[type="text"], .ctrl-row select {
+      flex: 1; background: #181822; border: 1px solid var(--border); color: #fff; padding: 5px 8px; border-radius: 6px; font-size: 12px;
+    }
+
+    /* Timeline Section */
+    .time-bar { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .play-btn {
+      background: #20202e; border: none; color: #fff; width: 28px; height: 28px;
+      border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 11px;
+    }
+
+    .timeline-wrapper {
+      position: relative; height: 44px; background: #08080c; border-radius: 8px;
+      border: 1px solid var(--border); overflow: hidden; display: flex; align-items: center;
+    }
+    #filmstrip { display: flex; width: 100%; height: 100%; opacity: 0.7; pointer-events: none; }
+    #filmstrip canvas { height: 100%; flex: 1; border-radius: 0; object-fit: cover; }
+    #timelineScrubber { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 4; margin: 0; }
+    .playhead { position: absolute; top: 0; bottom: 0; left: 0%; width: 2px; background: #fff; box-shadow: 0 0 6px #fff; z-index: 3; pointer-events: none; }
+
+    /* Action Buttons */
+    .actions { display: flex; gap: 8px; }
+    .btn {
+      flex: 1; padding: 11px; border-radius: 10px; border: none; font-weight: 600;
+      font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;
+    }
+    .btn-secondary { background: #1c1c28; color: #fff; border: 1px solid #2d2d3d; }
+    .btn-primary { background: linear-gradient(135deg, #7c5cff, #5a35ff); color: #fff; box-shadow: 0 4px 14px var(--accent-glow); }
+    .btn-primary:disabled { background: #1f1f2a; color: #555566; box-shadow: none; }
+    input[type="file"] { display: none; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="dot" id="engineDot"></div>
+      <span>Tracket Studio Pro</span>
+    </div>
+    <div class="badge" id="engineStatus">Loading AI Engine...</div>
+  </header>
+
+  <div class="viewport">
+    <div class="hint-pill" id="hintPill">Import video to activate motion suite</div>
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">🎬</div>
+      <div>Import video to start tracking & editing</div>
+    </div>
+    <video id="video" playsinline muted crossorigin="anonymous" style="display:none;"></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div class="editor-deck">
+    <!-- AE Feature Tabs -->
+    <div class="toolbar-tabs">
+      <button class="tab-btn active" onclick="switchTab('trackTab')">🎯 Track & Pin</button>
+      <button class="tab-btn" onclick="switchTab('textTab')">💬 3D Pinned Text</button>
+      <button class="tab-btn" onclick="switchTab('fxTab')">✨ AE FX & Speed</button>
+    </div>
+
+    <!-- Tab 1: Tracking Setup -->
+    <div class="panel-content active" id="trackTab">
+      <div class="ctrl-row">
+        <span>Stabilization Crop (<span id="zoomLabel">78%</span>)</span>
+        <input type="range" id="zoomSlider" min="50" max="95" value="78">
+      </div>
+      <div class="ctrl-row" style="color:var(--neon-green);">
+        <span>Tip: Scrub timeline, tap object to create pin tracker</span>
+      </div>
+    </div>
+
+    <!-- Tab 2: Pinned Text / Motion Graphics -->
+    <div class="panel-content" id="textTab">
+      <div class="ctrl-row">
+        <span>Pinned Text Label:</span>
+        <input type="text" id="pinTextInput" value="★ EPIC MOMENT">
+      </div>
+      <div class="ctrl-row">
+        <span>Text Font Size:</span>
+        <input type="range" id="fontSizeSlider" min="16" max="64" value="28">
+      </div>
+      <div class="ctrl-row">
+        <span>Text Color:</span>
+        <select id="textColorSelect">
+          <option value="#00f59b">Neon Green</option>
+          <option value="#ffffff">Pure White</option>
+          <option value="#7c5cff">Neon Purple</option>
+          <option value="#ff3864">Hot Pink</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Tab 3: Speed Ramp & Cinematic FX -->
+    <div class="panel-content" id="fxTab">
+      <div class="ctrl-row">
+        <span>Playback Speed Ramp:</span>
+        <select id="speedRampSelect">
+          <option value="1.0">Normal Speed (1.0x)</option>
+          <option value="0.5">Cinematic Slow-Mo (0.5x)</option>
+          <option value="2.0">Hyperlapse Speed (2.0x)</option>
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <span>Cinematic Vignette/Glow:</span>
+        <input type="range" id="glowSlider" min="0" max="100" value="35">
+      </div>
+    </div>
+
+    <!-- Timeline & Scrubber -->
+    <div class="time-bar">
+      <button class="play-btn" id="playPauseBtn" disabled>▶</button>
+      <span id="timeDisplay">00:00.0 / 00:00.0</span>
+      <span>Motion Lock</span>
+    </div>
+
+    <div class="timeline-wrapper">
+      <div id="filmstrip"></div>
+      <div class="playhead" id="playhead"></div>
+      <input type="range" id="timelineScrubber" min="0" max="100" step="0.01" value="0" disabled>
+    </div>
+
+    <!-- Bottom Actions -->
+    <div class="actions">
+      <label class="btn btn-secondary">
+        📁 Import Video
+        <input type="file" id="videoInput" accept="video/*">
+      </label>
+      <button class="btn btn-primary" id="exportBtn" disabled>
+        ✨ Render & Export
+      </button>
+    </div>
+  </div>
+
+  <!-- OpenCV.js -->
+  <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const hintPill = document.getElementById('hintPill');
+    const engineStatus = document.getElementById('engineStatus');
+    const emptyState = document.getElementById('emptyState');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const timelineScrubber = document.getElementById('timelineScrubber');
+    const playhead = document.getElementById('playhead');
+    const filmstrip = document.getElementById('filmstrip');
+    const zoomSlider = document.getElementById('zoomSlider');
+    const zoomLabel = document.getElementById('zoomLabel');
+    const exportBtn = document.getElementById('exportBtn');
+    
+    // UI Inputs
+    const pinTextInput = document.getElementById('pinTextInput');
+    const fontSizeSlider = document.getElementById('fontSizeSlider');
+    const textColorSelect = document.getElementById('textColorSelect');
+    const speedRampSelect = document.getElementById('speedRampSelect');
+    const glowSlider = document.getElementById('glowSlider');
+
+    let cvReady = false;
+    let trackBox = null;
+    let templateMat = null;
+    let isProcessing = false;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+
+    zoomSlider.oninput = () => zoomLabel.innerText = zoomSlider.value + '%';
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.panel-content').forEach(p => p.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById(tabId).classList.add('active');
+    }
+
+    function onOpenCvReady() {
+      cv['onRuntimeInitialized'] = () => {
+        cvReady = true;
+        engineStatus.innerText = "AE Engine Online";
+        engineStatus.style.color = "#00f59b";
+      };
+    }
+
+    function formatTime(sec) {
+      if (!isFinite(sec)) return "00:00.0";
+      const m = Math.floor(sec / 60).toString().padStart(2, '0');
+      const s = Math.floor(sec % 60).toString().padStart(2, '0');
+      const ms = Math.floor((sec % 1) * 10);
+      return `${m}:${s}.${ms}`;
+    }
+
+    // Video Loading & Thumbnails
+    document.getElementById('videoInput').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      emptyState.style.display = 'none';
+      hintPill.innerText = "Generating filmstrip frames...";
+      video.src = URL.createObjectURL(file);
+
+      video.onloadedmetadata = async () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        timelineScrubber.max = video.duration;
+        timelineScrubber.disabled = false;
+        playPauseBtn.disabled = false;
+        trackBox = null;
+        exportBtn.disabled = true;
+
+        await generateThumbnails();
+        video.currentTime = 0.05;
+        hintPill.innerText = "Scrub timeline & tap object to pin 3D text/stabilize";
+      };
+    });
+
+    async function generateThumbnails() {
+      filmstrip.innerHTML = '';
+      const count = 8;
+      const dur = video.duration || 1;
+      for (let i = 0; i < count; i++) {
+        video.currentTime = (dur / count) * i;
+        await new Promise(r => video.onseeked = r);
+        const tCanvas = document.createElement('canvas');
+        tCanvas.width = 120; tCanvas.height = 68;
+        tCanvas.getContext('2d').drawImage(video, 0, 0, tCanvas.width, tCanvas.height);
+        filmstrip.appendChild(tCanvas);
+      }
+    }
+
+    video.addEventListener('timeupdate', () => {
+      if (isProcessing) return;
+      updateTimelineUI();
+      drawCurrentFrameWithReticle();
+    });
+
+    function updateTimelineUI() {
+      const pct = (video.currentTime / (video.duration || 1)) * 100;
+      playhead.style.left = `${pct}%`;
+      timelineScrubber.value = video.currentTime;
+      timeDisplay.innerText = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+    }
+
+    timelineScrubber.addEventListener('input', () => {
+      if (isProcessing) return;
+      video.pause();
+      playPauseBtn.innerText = "▶";
+      video.currentTime = parseFloat(timelineScrubber.value);
+      updateTimelineUI();
+    });
+
+    playPauseBtn.addEventListener('click', () => {
+      if (video.paused) {
+        video.play();
+        playPauseBtn.innerText = "⏸";
+      } else {
+        video.pause();
+        playPauseBtn.innerText = "▶";
+      }
+    });
+
+    // Tap Subject to Pin Tracker & Text Overlay
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!video.src || isProcessing) return;
+      video.pause();
+      playPauseBtn.innerText = "▶";
+
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+
+      const tapX = (e.clientX - rect.left) * scaleX;
+      const tapY = (e.clientY - rect.top) * scaleY;
+
+      const boxSize = Math.round(Math.min(canvas.width, canvas.height) * 0.16);
+      const x = Math.max(0, Math.min(canvas.width - boxSize, tapX - boxSize / 2));
+      const y = Math.max(0, Math.min(canvas.height - boxSize, tapY - boxSize / 2));
+
+      trackBox = { x: Math.round(x), y: Math.round(y), w: boxSize, h: boxSize };
+      drawCurrentFrameWithReticle();
+
+      hintPill.innerText = "Object Pinned! Hit Render & Export.";
+      exportBtn.disabled = false;
+    });
+
+    function drawCurrentFrameWithReticle() {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      if (!trackBox) return;
+
+      const { x, y, w, h } = trackBox;
+      ctx.save();
+      ctx.strokeStyle = '#00f59b';
+      ctx.lineWidth = Math.max(3, canvas.width * 0.005);
+      
+      // Tracking Reticle Box
+      const c = w * 0.25;
+      ctx.beginPath();
+      ctx.moveTo(x, y + c); ctx.lineTo(x, y); ctx.lineTo(x + c, y);
+      ctx.moveTo(x + w - c, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + c);
+      ctx.moveTo(x, y + h - c); ctx.lineTo(x, y + h); ctx.lineTo(x + c, y + h);
+      ctx.moveTo(x + w - c, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - c);
+      ctx.stroke();
+
+      // Draw Pinned Text Preview
+      const label = pinTextInput.value;
+      const fSize = parseInt(fontSizeSlider.value);
+      ctx.font = `bold ${fSize}px sans-serif`;
+      ctx.fillStyle = textColorSelect.value;
+      ctx.shadowColor = "rgba(0,0,0,0.9)";
+      ctx.shadowBlur = 8;
+      ctx.fillText(label, x, y - 10);
+      ctx.restore();
+    }
+
+    // Render & Export with Tracking, Speed Ramping, and FX
+    exportBtn.addEventListener('click', () => {
+      if (!cvReady || !trackBox) return;
+      isProcessing = true;
+      exportBtn.disabled = true;
+      timelineScrubber.disabled = true;
+      playPauseBtn.disabled = true;
+      hintPill.innerText = "Processing After Effects Motion Suite...";
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      let firstFrame = cv.imread(canvas);
+      let roi = new cv.Rect(trackBox.x, trackBox.y, trackBox.w, trackBox.h);
+      if (templateMat) templateMat.delete();
+      templateMat = firstFrame.roi(roi).clone();
+      firstFrame.delete();
+
+      recordedChunks = [];
+      const stream = canvas.captureStream(30);
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'tracket_ae_masterpiece.webm';
+        a.click();
+        isProcessing = false;
+        exportBtn.disabled = false;
+        timelineScrubber.disabled = false;
+        playPauseBtn.disabled = false;
+        hintPill.innerText = "Export Complete!";
+      };
+
+      mediaRecorder.start();
+      video.playbackRate = parseFloat(speedRampSelect.value);
+      video.currentTime = 0;
+      video.play();
+      requestAnimationFrame(processLoop);
+    });
+
+    function processLoop() {
+      if (video.paused || video.ended) {
+        if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
+        return;
+      }
+
+      updateTimelineUI();
+      const w = canvas.width;
+      const h = canvas.height;
+
+      ctx.drawImage(video, 0, 0, w, h);
+      let frame = cv.imread(canvas);
+
+      // CSRT/Template Tracking Match
+      const pad = Math.round(trackBox.w * 0.9);
+      const sx = Math.max(0, trackBox.x - pad);
+      const sy = Math.max(0, trackBox.y - pad);
+      const sw = Math.min(w - sx, trackBox.w + pad * 2);
+      const sh = Math.min(h - sy, trackBox.h + pad * 2);
+
+      let searchWindow = frame.roi(new cv.Rect(sx, sy, sw, sh));
+      let result = new cv.Mat();
+      cv.matchTemplate(searchWindow, templateMat, result, cv.TM_CCOEFF_NORMED);
+      let minMax = cv.minMaxLoc(result);
+
+      if (minMax.maxVal > 0.45) {
+        trackBox.x = sx + minMax.maxLoc.x;
+        trackBox.y = sy + minMax.maxLoc.y;
+      }
+
+      const objCenterX = trackBox.x + trackBox.w / 2;
+      const objCenterY = trackBox.y + trackBox.h / 2;
+      const shiftX = (w / 2) - objCenterX;
+      const shiftY = (h / 2) - objCenterY;
+
+      const zoom = parseInt(zoomSlider.value) / 100;
+      const scale = 1 / zoom;
+
+      // Render Stabilized Canvas with AE FX (Glow & Vignette)
+      ctx.save();
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, w, h);
+      ctx.translate(w / 2, h / 2);
+      ctx.scale(scale, scale);
+      ctx.translate(-w / 2 + shiftX, -h / 2 + shiftY);
+      ctx.drawImage(video, 0, 0, w, h);
+      ctx.restore();
+
+      // Apply Cinematic Vignette Overlay
+      const glowVal = parseInt(glowSlider.value) / 100;
+      if (glowVal > 0) {
+        let grad = ctx.createRadialGradient(w/2, h/2, w*0.25, w/2, h/2, w*0.75);
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        grad.addColorStop(1, `rgba(0,0,0,${glowVal * 0.75})`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      // Draw Pinned 3D Text Following Object Motion
+      const label = pinTextInput.value;
+      const fSize = parseInt(fontSizeSlider.value);
+      ctx.save();
+      ctx.font = `bold ${fSize}px sans-serif`;
+      ctx.fillStyle = textColorSelect.value;
+      ctx.shadowColor = textColorSelect.value;
+      ctx.shadowBlur = 12;
+      ctx.fillText(label, trackBox.x + shiftX, trackBox.y + shiftY - 10);
+      ctx.restore();
+
+      frame.delete();
+      searchWindow.delete();
+      result.delete();
+
+      requestAnimationFrame(processLoop);
+    }
+  </script>
+</body>
+</html>
